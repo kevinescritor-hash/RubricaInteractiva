@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Rúbrica de Actitud</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                500: '#ef4444', // Rojo
+                600: '#dc2626',
+              },
+              secondary: '#1e40af', // Azul
+            }
+          }
+        }
+      }
+    </script>
+
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; }
+      
+      /* Estilos para las celdas pulsables */
+      .rubric-cell {
+          cursor: pointer;
+          transition: all 0.2s ease;
+          position: relative;
+          min-height: 120px; /* Altura mínima para mostrar el descriptor */
+      }
+      .rubric-cell:hover:not(.selected) {
+          background-color: #f0f9ff; /* Blue 50 */
+          border-color: #93c5fd; /* Blue 300 */
+          transform: scale(1.02);
+          z-index: 10;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      }
+      .rubric-cell.selected {
+          border-width: 4px;
+          border-style: solid;
+          transform: scale(1.01);
+          z-index: 20;
+          box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+      }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel" data-presets="react,typescript">
+      const { useState, useMemo } = React;
+      
+      // --- DATOS INICIALES (Extraídos y estructurados del CSV) ---
+      
+      const RUBRIC_DATA = [
+        {
+          id: 1,
+          criterio: "PUNTUALIDAD",
+          puntuacionBase: 2,
+          niveles: [
+            { score: 4, desc: "Asiste puntualmente a las clases programadas." },
+            { score: 3, desc: "Asiste puntualmente de manera frecuente a las sesiones de manera estable y puntual." },
+            { score: 2, desc: "Ha llegado tarde de manera esporádica a las sesiones pero ha comunicado sus dificultades" },
+            { score: 1, desc: "Ha llegado tarde de manera habitual pero ha comunicado sus dificultades." },
+            { score: 0, desc: "Llega tarde de manera habitual sin justificación" }
+          ]
+        },
+        {
+          id: 2,
+          criterio: "ENTREGA Y PRESENTACIÓN DE TRABAJOS",
+          puntuacionBase: 2,
+          niveles: [
+            { score: 4, desc: "Entrega todos los trabajos asignados en la fecha establecida y de acuerdo con las indicaciones dadas por el docente" },
+            { score: 3, desc: "Entrega la mayor parte de trabajos asignados en la fecha establecida y de acuerdo con las indicaciones dadas por el docente" },
+            { score: 2, desc: "Entrega algunos trabajos asignados en la fecha establecida y de acuerdo con las indicaciones dadas por el docente." },
+            { score: 1, desc: "Entrega pocos trabajos asignados en la fecha establecida y no toma en cuenta todas las indicaciones dadas por el docente." },
+            { score: 0, desc: "No presenta sus trabajos ni comunica sus dificultades." }
+          ]
+        },
+        {
+          id: 3,
+          criterio: "FRECUENCIA Y CALIDAD DE LA PARTICIPACIÓN EN CLASE",
+          puntuacionBase: 2,
+          niveles: [
+            { score: 4, desc: "Interviene frecuentemente y ofrece aportes (preguntas o comentarios) que enriquecen el tema de clase." },
+            { score: 3, desc: "Interviene a veces pero sus aportes (preguntas o comentarios) enriquecen el tema de clase" },
+            { score: 2, desc: "Interviene frecuentemente, pero sus aportes no siempre son relevantes." },
+            { score: 1, desc: "Interviene, poco o a solicitud del profesor." },
+            { score: 0, desc: "No participa y no muestra interés por los contenidos tratados." }
+          ]
+        },
+        {
+          id: 4,
+          criterio: "COLABORACIÓN Y APORTE AL BUEN CLIMA DEL AULA",
+          puntuacionBase: 2,
+          niveles: [
+            { score: 4, desc: "Siempre es colaborador y su comportamiento favorece el clima de la clase" },
+            { score: 3, desc: "Con frecuencia es colaborador y su comportamiento favorece el clima de la clase" },
+            { score: 2, desc: "A veces colabora, pero no interfiere negativamente con el clima de la clase" },
+            { score: 1, desc: "Muestra una actitud pasiva o indiferente en clase." },
+            { score: 0, desc: "Su comportamiento interfiere el buen clima de la clase" }
+          ]
+        },
+        {
+          id: 5,
+          criterio: "EMPLEO DEL LENGUAJE ADECUADO (No uso de lenguaje grosero y soez)",
+          puntuacionBase: 2,
+          niveles: [
+            { score: 4, desc: "Siempre utiliza un lenguaje apropiado para dirigirse al docente y sus compañeros" },
+            { score: 3, desc: "Con frecuencia utiliza un lenguaje apropiado para dirigirse al docente y sus compañeros" },
+            { score: 2, desc: "Algunas veces su lenguaje fue inapropiado, pero rectifica ante la llamada de atención" },
+            { score: 1, desc: "Pocas veces utiliza un lenguaje apropiado para dirigirse al docente y sus compañeros." },
+            { score: 0, desc: "Su lenguaje es inapropiado siempre, con el docente y sus compañeros." }
+          ]
+        }
+      ];
+
+      // Constantes para el encabezado de la rúbrica (columna 3 a 12 del CSV)
+      const RUBRIC_HEADERS = [
+          { label: "SIEMPRE", score: 4, color: "green", baseClass: "bg-green-100 hover:bg-green-200 border-green-500 text-green-800" },
+          { label: "CASI SIEMPRE", score: 3, color: "lime", baseClass: "bg-lime-100 hover:bg-lime-200 border-lime-500 text-lime-800" },
+          { label: "A VECES", score: 2, color: "yellow", baseClass: "bg-yellow-100 hover:bg-yellow-200 border-yellow-500 text-yellow-800" },
+          { label: "CASI NUNCA", score: 1, color: "orange", baseClass: "bg-orange-100 hover:bg-orange-200 border-orange-500 text-orange-800" },
+          { label: "NUNCA", score: 0, color: "red", baseClass: "bg-red-100 hover:bg-red-200 border-red-500 text-red-800" },
+      ];
+
+
+      // --- COMPONENTE: Tabla de Rúbrica ---
+
+      const RubricTable = ({ data, scores, onScoreChange }) => {
+        
+        // Renderiza una celda pulsable con el descriptor
+        const RubricCell = ({ criterioId, nivel }) => {
+            const isSelected = scores[criterioId] === nivel.score;
+            const header = RUBRIC_HEADERS.find(h => h.score === nivel.score);
+
+            // Clase CSS para el color de fondo y texto
+            const colorClass = header.baseClass.replace(/hover:bg-\w+-\d+/, ''); // Eliminar hover para la selección
+
+            return (
+                <td 
+                    className={`rubric-cell p-3 border-r border-slate-200 align-top text-sm relative 
+                                ${isSelected ? `${colorClass} selected border-secondary ring-2 ring-offset-2 ring-secondary` : 'bg-slate-50 hover:bg-slate-100 border-slate-200'}`}
+                    onClick={() => onScoreChange(criterioId, nivel.score)}
+                    title={nivel.desc}
+                >
+                    <p className={`font-bold text-center mb-1 text-slate-800 ${isSelected ? 'text-lg text-secondary' : 'text-sm'}`}>
+                        {nivel.score} Puntos
+                    </p>
+                    <p className="text-xs text-slate-600 leading-tight">
+                        {nivel.desc}
+                    </p>
+                </td>
+            );
+        };
+
+        return (
+            <div className="overflow-x-auto shadow-xl rounded-xl border border-slate-200 bg-white">
+                <table className="min-w-full divide-y divide-slate-200">
+                    
+                    {/* Encabezado de la Rúbrica (Niveles y Puntuación) */}
+                    <thead className="bg-slate-900 sticky top-0 z-30">
+                        <tr>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider sticky left-0 bg-slate-900 z-40 w-1/5 min-w-[180px]">
+                                Criterio (Base)
+                            </th>
+                            {RUBRIC_HEADERS.map(h => (
+                                <th 
+                                    key={h.score} 
+                                    className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider border-l border-slate-700 w-[16%] min-w-[200px] text-white"
+                                >
+                                    {h.label} ({h.score})
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    
+                    {/* Cuerpo de la Rúbrica (Criterios y Descriptores) */}
+                    <tbody className="divide-y divide-slate-200">
+                        {data.map(criterio => {
+                            const finalScore = (criterio.puntuacionBase / 4) * scores[criterio.id];
+                            
+                            return (
+                                <tr key={criterio.id} className="hover:bg-blue-50">
+                                    {/* Columna de Criterio */}
+                                    <td className="p-4 border-r border-slate-200 align-middle sticky left-0 bg-slate-100 z-30 w-1/5 min-w-[180px]">
+                                        <h4 className="text-sm font-bold text-slate-800">{criterio.criterio}</h4>
+                                        <p className="text-xs text-slate-600 mt-1">Puntuación Base: {criterio.puntuacionBase}</p>
+                                        <p className="text-lg font-extrabold text-primary-600 mt-2">Nota: {finalScore.toFixed(2)}</p>
+                                    </td>
+                                    
+                                    {/* Celdas de Niveles (Pulsables) */}
+                                    {RUBRIC_HEADERS.map(header => {
+                                        const nivel = criterio.niveles.find(n => n.score === header.score);
+                                        return (
+                                            <RubricCell 
+                                                key={`${criterio.id}-${header.score}`} 
+                                                criterioId={criterio.id}
+                                                nivel={nivel}
+                                            />
+                                        );
+                                    })}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        );
+      };
+
+
+      // --- COMPONENTE PRINCIPAL: App ---
+
+      const App = () => {
+        // Inicializa el estado con la puntuación máxima (4) para cada criterio
+        const initialScores = RUBRIC_DATA.reduce((acc, c) => {
+          acc[c.id] = 4; // Inicializa cada criterio en 4 (SIEMPRE)
+          return acc;
+        }, {});
+        
+        const [scores, setScores] = useState(initialScores);
+        
+        const handleScoreChange = (criterioId, newScore) => {
+          setScores(prev => ({ ...prev, [criterioId]: newScore }));
+        };
+        
+        const totalMaxScore = RUBRIC_DATA.reduce((sum, c) => sum + c.puntuacionBase, 0);
+
+        const totalObtainedScore = useMemo(() => {
+          return RUBRIC_DATA.reduce((total, criterio) => {
+            const currentScore = scores[criterio.id];
+            // Fórmula replicada del Excel: (Puntuación Base / Puntuación Máxima del Nivel) * Puntuación Obtenida
+            const finalScore = (criterio.puntuacionBase / 4) * currentScore;
+            return total + finalScore;
+          }, 0);
+        }, [scores]);
+        
+        const resetScores = () => {
+             const reset = RUBRIC_DATA.reduce((acc, c) => {
+                acc[c.id] = 4;
+                return acc;
+              }, {});
+             setScores(reset);
+        };
+
+        return (
+          <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+            {/* Header */}
+            <header className="bg-secondary text-white pt-8 pb-12 px-4 shadow-lg">
+              <div className="max-w-[1400px] mx-auto">
+                <h1 className="text-3xl font-extrabold tracking-tight">
+                    Calculadora Interactiva de Actitud en Clase
+                </h1>
+                </div>
+            </header>
+
+            <main className="max-w-[1400px] mx-auto px-4 -mt-8 w-full space-y-8">
+              
+              {/* Resumen de Nota */}
+              <div className="bg-white p-6 rounded-xl shadow-2xl border-t-8 border-primary-500 flex justify-between items-center">
+                  <div>
+                      <h2 className="text-xl font-bold text-slate-700">Nota Total Obtenida</h2>
+                  </div>
+                  <div className="text-right">
+                      <p className="text-5xl font-extrabold text-primary-600 leading-none">{totalObtainedScore.toFixed(2)}/{totalMaxScore.toFixed(0)}</p>
+                      <button onClick={resetScores} className="mt-1 text-xs text-secondary hover:underline">Reiniciar</button>
+                  </div>
+              </div>
+
+              {/* Rúbrica en formato tabla */}
+              <div>
+                  <h2 className="text-2xl font-bold text-slate-700 mb-4">Selección de Niveles de Desempeño</h2>
+                  <RubricTable 
+                    data={RUBRIC_DATA} 
+                    scores={scores} 
+                    onScoreChange={handleScoreChange} 
+                  />
+              </div>
+
+            </main>
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+</body>
+</html>
